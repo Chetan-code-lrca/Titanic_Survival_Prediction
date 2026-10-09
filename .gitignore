@@ -7,3 +7,5 @@ venv/
 htmlcov/
 *.egg-info/
 .DS_Store
+train.csv
+test.csv
