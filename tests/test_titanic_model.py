@@ -52,3 +52,39 @@ def test_invalid_survival_labels_are_rejected(tmp_path):
 def test_missing_file_is_reported(tmp_path):
     with pytest.raises(FileNotFoundError, match="Training CSV not found"):
         load_training_data(tmp_path / "does-not-exist.csv")
+
+
+@pytest.mark.parametrize(
+    ("column", "bad_value", "expected_message"),
+    [
+        ("Fare", "not-a-number", "must contain numeric values"),
+        ("Age", "inf", "must contain finite numeric values"),
+    ],
+)
+def test_invalid_numeric_features_report_column_and_csv_row(
+    tmp_path, column, bad_value, expected_message
+):
+    frame = make_passengers()
+    frame[column] = frame[column].astype("object")
+    frame.loc[3, column] = bad_value
+    path = tmp_path / "invalid-feature.csv"
+    frame.to_csv(path, index=False)
+
+    with pytest.raises(ValueError) as exc_info:
+        load_training_data(path)
+
+    assert expected_message in str(exc_info.value)
+    assert f"{column}" in str(exc_info.value)
+    assert "CSV row(s): 5" in str(exc_info.value)
+
+
+def test_whitespace_only_numeric_values_remain_missing_and_imputable(tmp_path):
+    frame = make_passengers()
+    frame["Age"] = frame["Age"].astype("object")
+    frame.loc[3, "Age"] = " "
+    path = tmp_path / "blank-feature.csv"
+    frame.to_csv(path, index=False)
+
+    features, _ = load_training_data(path)
+
+    assert pd.isna(features.loc[3, "Age"])
