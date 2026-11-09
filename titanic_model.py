@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 from sklearn.compose import ColumnTransformer
 from sklearn.impute import SimpleImputer
@@ -21,6 +22,15 @@ FEATURES = NUMERIC_FEATURES + CATEGORICAL_FEATURES
 REQUIRED_COLUMNS = [TARGET, *FEATURES]
 
 
+def _format_csv_rows(mask: pd.Series) -> str:
+    """Return a short, 1-based CSV row list (including the header row)."""
+    rows = [str(int(index) + 2) for index in mask[mask].index[:5]]
+    remaining = int(mask.sum()) - len(rows)
+    if remaining:
+        rows.append(f"... ({remaining} more)")
+    return ", ".join(rows)
+
+
 def load_training_data(csv_path: str | Path) -> tuple[pd.DataFrame, pd.Series]:
     """Load a Titanic training CSV and validate its required columns and labels."""
     path = Path(csv_path)
@@ -33,6 +43,26 @@ def load_training_data(csv_path: str | Path) -> tuple[pd.DataFrame, pd.Series]:
         raise ValueError(f"CSV is missing required columns: {', '.join(missing)}")
     if frame.empty:
         raise ValueError("Training CSV contains no rows")
+
+    for column in NUMERIC_FEATURES:
+        raw_values = frame[column].replace(r"^\s*$", pd.NA, regex=True)
+        numeric_values = pd.to_numeric(raw_values, errors="coerce")
+
+        invalid = raw_values.notna() & numeric_values.isna()
+        if invalid.any():
+            raise ValueError(
+                f"{column} must contain numeric values; "
+                f"invalid value(s) at CSV row(s): {_format_csv_rows(invalid)}"
+            )
+
+        non_finite = numeric_values.notna() & ~np.isfinite(numeric_values)
+        if non_finite.any():
+            raise ValueError(
+                f"{column} must contain finite numeric values; "
+                f"invalid value(s) at CSV row(s): {_format_csv_rows(non_finite)}"
+            )
+
+        frame[column] = numeric_values
 
     target = frame[TARGET]
     if target.isna().any() or not target.isin([0, 1]).all():
